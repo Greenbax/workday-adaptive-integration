@@ -208,11 +208,24 @@ function exportData(context) {
     return;
   }
 
+  ai.log.logInfo(
+    "Total Departments: " +
+      allDepartments.length +
+      ", Total GL Accounts: " +
+      allAccounts.length
+  );
+
   var reader = context.createTableReader(SOURCE_COLUMNS);
   var aggregatedData = aggregateByYear(reader);
 
-  ai.log.logInfo("Aggregated data:", JSON.stringify(aggregatedData));
-  ai.log.logInfo("Number of budgets:", Object.keys(aggregatedData).length);
+  // Log the aggregated data and number of budgets
+  ai.log.logInfo(
+    "Number of budgets: " +
+      Object.keys(aggregatedData).length +
+      ", " +
+      "Aggregated data: " +
+      JSON.stringify(aggregatedData)
+  );
 
   for (var key in aggregatedData) {
     var data = aggregatedData[key];
