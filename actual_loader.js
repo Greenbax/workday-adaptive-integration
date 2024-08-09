@@ -1,131 +1,136 @@
-'use strict';
+"use strict";
 
-import { ai } from '/Script/Source/Integration2/CustomCloudScripts/CustomCloudScriptApi.js';
+import { ai } from "/Script/Source/Integration2/CustomCloudScripts/CustomCloudScriptApi.js";
 
-var SOURCE_COLUMNS = ['Account Code', 'Level Name', 'Period', 'Value'];
+// Update the following variables with your own values /////////
+var SOURCE_COLUMNS = ["Account Code", "Level Name", "Period", "Value"];
+var API_KEY = "...";
+////////////////////////////////////////////////////////////////
 
-var API_KEY = '...';
-var API_URL = 'https://api.ziphq.com';
+var API_URL = "https://api.ziphq.com";
 
-var body = '';
+var body = "";
 var headers = {
-  'Content-Type': 'application/json',
-  'Zip-Api-Key': API_KEY,
+  "Content-Type": "application/json",
+  "Zip-Api-Key": API_KEY,
 };
 
 // Manually invoke this method via 'Test connection'
 function testConnection(context) {
-  ai.log.logInfo("context", JSON.stringify(context))
+  ai.log.logInfo("context", JSON.stringify(context));
   var response = null;
   try {
-    response = ai.https.request(API_URL, 'GET', body, headers);
+    response = ai.https.request(API_URL, "GET", body, headers);
   } catch (error) {
-    ai.log.logError('Test Connection HTTPS Request failed', '' + error);
+    ai.log.logError("Test Connection HTTPS Request failed", "" + error);
     return false;
   }
 
   var httpCode = response.getHttpCode();
   var responseBody = response.getBody();
 
-  ai.log.logInfo('HTTP Code', httpCode);
+  ai.log.logInfo("HTTP Code", httpCode);
 
-  if (httpCode == '200') {
-    ai.log.logInfo('Success', responseBody);
+  if (httpCode == "200") {
+    ai.log.logInfo("Success", responseBody);
     return true;
   }
 
-  ai.log.logError('Failed', responseBody);
+  ai.log.logError("Failed", responseBody);
 
   return false;
 }
 
-function getZipDepartment(departmentName) {
-  ai.log.logInfo('Searching Department', departmentName);
+function fetchAllPages(url, params = {}) {
+  var results = [];
+  var pageToken = "";
 
-  var url = API_URL + "/departments?hide_in_zip=false&is_active=true&name='" + departmentName + "'";
+  do {
+    params.page_token = pageToken;
+    var queryString = Object.keys(params)
+      .map((key) => key + "=" + encodeURIComponent(params[key]))
+      .join("&");
+    var paginatedUrl = url + "?" + queryString;
 
-  var response = null;
-  try {
-    response = ai.https.request(url, 'GET', '', headers);
-  } catch (error) {
-    ai.log.logError('Zip department API fetch failure', '' + error);
-    return null;
-  }
-
-  var responseBody = response.getBody();
-
-  if (response.getHttpCode() == '200') {
-    var parsedResponse = JSON.parse(responseBody);
-
-    if (!parsedResponse.list) {
-      ai.log.logInfo('Zip department fetch failure', responseBody);
+    var response = null;
+    try {
+      response = ai.https.request(paginatedUrl, "GET", "", headers);
+    } catch (error) {
+      ai.log.logError("API fetch failure", "" + error);
       return null;
     }
 
-    for (let i = 0; i < parsedResponse.list.length; i++) {
-      if (parsedResponse.list[i].name == departmentName) {
-        ai.log.logInfo('Zip department fetch success', JSON.stringify(parsedResponse.list[i]));
-        return parsedResponse.list[i];
-      }
+    var responseBody = response.getBody();
+    if (response.getHttpCode() == "200") {
+      var parsedResponse = JSON.parse(responseBody);
+      results = results.concat(parsedResponse.list);
+      pageToken = parsedResponse.next_page_token;
+    } else {
+      ai.log.logError("API fetch failure", responseBody);
+      return null;
     }
+  } while (pageToken);
 
+  return results;
+}
+
+function getAllDepartments() {
+  ai.log.logInfo("Fetching all departments");
+
+  var url = API_URL + "/departments";
+  var params = {
+    hide_in_zip: false,
+    is_active: true,
+    page_size: 100,
+  };
+
+  return fetchAllPages(url, params);
+}
+
+function getAllAccounts() {
+  ai.log.logInfo("Fetching all GL accounts");
+
+  var url = API_URL + "/gl_codes";
+  var params = {
+    active: true,
+    page_size: 100,
+  };
+
+  return fetchAllPages(url, params);
+}
+
+function findByName(list, name) {
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].name === name) {
+      return list[i];
+    }
   }
-
-  ai.log.logInfo('No Zip department name match', responseBody);
-
   return null;
 }
 
-function getZipAccount(accountCode) {
-  ai.log.logInfo('Searching Account', accountCode);
-
-  var url = API_URL + '/gl_codes?active=true&name=' + accountCode;
-
-  var response = null;
-  try {
-    response = ai.https.request(url, 'GET', '', headers);
-  } catch (error) {
-    ai.log.logError('Zip account API fetch failure', '' + error);
-    return null;
-  }
-
-  var responseBody = response.getBody();
-
-  if (response.getHttpCode() == '200') {
-    var parsedResponse = JSON.parse(responseBody);
-
-    if (!parsedResponse.list) {
-      ai.log.logInfo('Zip account fetch failure', responseBody);
-      return null;
-    }
-
-    for (let i = 0; i < parsedResponse.list.length; i++) {
-      if (parsedResponse.list[i].account_number == accountCode) {
-        ai.log.logInfo('Zip account fetch success', JSON.stringify(parsedResponse.list[i]));
-        return parsedResponse.list[i];
-      }
+function findByAccountCode(list, accountCode) {
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].account_number === accountCode) {
+      return list[i];
     }
   }
-
-  ai.log.logInfo('No Zip account code match', responseBody);
-
   return null;
 }
 
 function parsePeriod(period) {
-  var parts = period.split('/');
+  var parts = period.split("/");
   var month = parts[0];
   var year = parts[1];
-  var newDateStr = month + '/01/' + year;
+  var newDateStr = month + "/01/" + year;
   return {
     month: month,
     year: year,
-    formattedDate: newDateStr
+    formattedDate: newDateStr,
   };
 }
 
-function putZipBudgetActual(departmentId, accountId, period, value) {
-  var url = API_URL + '/budget_actuals';
+function putZipBudgetActual(departmentId, accountId, period, value, logInfo) {
+  var url = API_URL + "/budget_actuals";
 
   var parsedPeriod = parsePeriod(period);
 
@@ -134,7 +139,7 @@ function putZipBudgetActual(departmentId, accountId, period, value) {
       department_id: departmentId,
       gl_account_id: accountId,
       date: parsedPeriod.formattedDate,
-      amount: value + '', // Make it a string
+      amount: value + "", // Make it a string
     },
   };
 
@@ -142,67 +147,81 @@ function putZipBudgetActual(departmentId, accountId, period, value) {
 
   var response = null;
   try {
-    response = ai.https.request(url, 'PUT', body, headers);
+    response = ai.https.request(url, "PUT", body, headers);
   } catch (error) {
-    ai.log.logError('Zip budget actual API PUT failure', '' + error);
+    ai.log.logError(
+      "Zip budget actual API PUT failure",
+      logInfo + " | " + error
+    );
     return false;
   }
 
   var responseBody = response.getBody();
 
-  if (response.getHttpCode() == '200') {
-    ai.log.logInfo('Zip budget actual PUT success', responseBody);
+  if (response.getHttpCode() == "200") {
+    ai.log.logInfo(
+      "Zip budget actual PUT success",
+      logInfo + " | " + responseBody
+    );
     return true;
   }
 
-  ai.log.logInfo('Zip budget actual PUT failure', responseBody);
+  ai.log.logError(
+    "Zip budget actual PUT failure",
+    logInfo + " | " + responseBody
+  );
 
   return false;
 }
 
 // Manually invoke this method via 'Run manually'
 function exportData(context) {
-  ai.log.logInfo("STARTING EXPORT")
+  ai.log.logInfo("STARTING EXPORT");
+
+  // Fetch all departments and accounts upfront
+  var allDepartments = getAllDepartments();
+  var allAccounts = getAllAccounts();
+
+  if (!allDepartments || !allAccounts) {
+    ai.log.logError("Failed to fetch all departments or accounts");
+    return;
+  }
 
   var reader = context.createTableReader(SOURCE_COLUMNS);
 
   var row = null;
   while ((row = reader.readRow()) !== null) {
-    var departmentName = row[SOURCE_COLUMNS.indexOf('Level Name')];
-    var accountCode = row[SOURCE_COLUMNS.indexOf('Account Code')];
-    var period = row[SOURCE_COLUMNS.indexOf('Period')];
-    var value = row[SOURCE_COLUMNS.indexOf('Value')];
+    var departmentName = row[SOURCE_COLUMNS.indexOf("Level Name")];
+    var accountCode = row[SOURCE_COLUMNS.indexOf("Account Code")];
+    var period = row[SOURCE_COLUMNS.indexOf("Period")];
+    var value = row[SOURCE_COLUMNS.indexOf("Value")];
 
-    // Get department from Zip
-    var zipDepartment = getZipDepartment(departmentName);
+    // Find department and account from pre-fetched data
+    var zipDepartment = findByName(allDepartments, departmentName);
+    var zipAccount = findByAccountCode(allAccounts, accountCode);
 
-    if (!zipDepartment) {
+    if (!zipDepartment || !zipAccount) {
+      ai.log.logInfo(
+        "No match found for department or account",
+        "Department: " + departmentName + ", Account: " + accountCode
+      );
       continue;
     }
 
-    // Get account from Zip
-    var zipAccount = getZipAccount(accountCode);
+    var logInfo =
+      "Department Name: " +
+      departmentName +
+      ", Department ID: " +
+      zipDepartment.id +
+      ", Account Code: " +
+      accountCode +
+      ", Account ID: " +
+      zipAccount.id +
+      ", Period: " +
+      period +
+      ", Value: " +
+      value;
 
-    if (!zipAccount) {
-      continue;
-    }
-
-    ai.log.logInfo(
-      'Zip budget actual PUT',
-      'Department Name: ' +
-        departmentName +
-        ', Department ID: ' +
-        zipDepartment.id +
-        ', Account Code: ' +
-        accountCode +
-        ', Account ID: ' +
-        zipAccount.id +
-        ', Period: ' +
-        period +
-        ', Value: ' +
-        value
-    );
-
-    putZipBudgetActual(zipDepartment.id, zipAccount.id, period, value);
+    putZipBudgetActual(zipDepartment.id, zipAccount.id, period, value, logInfo);
   }
 }
